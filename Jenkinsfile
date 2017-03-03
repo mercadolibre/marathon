@@ -35,8 +35,6 @@ def stageWithCommitStatus(label, block) {
   stage(label) { withCommitStatus(label, block) }
 }
 
-def error = null
-
 node('JenkinsMarathonCI-Debian8-1-2017-02-23') { try {
         stage("Checkout Repo") {
             checkout scm
@@ -137,8 +135,8 @@ node('JenkinsMarathonCI-Debian8-1-2017-02-23') { try {
               ]],
               profileName: 'marathon-artifacts',
               dontWaitForConcurrentBuildCompletion: false,
-              consoleLogLevel: 'INFO',
-              pluginFailureResultConstraint: 'FAILURE'
+              consoleLogLevel: 'INFO'
+         //     pluginFailureResultConstraint: 'FAILURE'
           ])
       }
       // Only create latest-dev snapshot for master.
@@ -151,7 +149,6 @@ node('JenkinsMarathonCI-Debian8-1-2017-02-23') { try {
         }
       }
     } catch (Exception err) {
-        error = err
         currentBuild.result = 'FAILURE'
         if( env.BRANCH_NAME.startsWith("releases/") || env.BRANCH_NAME == "master" ) {
           slackSend(
@@ -160,15 +157,11 @@ node('JenkinsMarathonCI-Debian8-1-2017-02-23') { try {
             channel: "#marathon-dev",
             tokenCredentialId: "f430eaac-958a-44cb-802a-6a943323a6a8")
         }
+        throw err
     } finally {
         step([ $class: 'GitHubCommitStatusSetter'
              , errorHandlers: [[$class: 'ShallowAnyErrorHandler']]
              , contextSource: [$class: 'ManuallyEnteredCommitContextSource', context: "Velocity All"]
              ])
-
-        // Rethrow error
-        if (error) {
-            throw error
-        }
     }
 }
