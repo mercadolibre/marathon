@@ -25,6 +25,11 @@ def withCommitStatus(label, block) {
   }
 }
 
+def previousBuildFailed() {
+    def previousResult = currentBuild.rawBuild.getPreviousBuild()?.getResult()
+    return !hudson.model.Result.SUCCESS.equals(previousResult)
+}
+
 /**
  * Wrap block with a stage and a GitHub commit status setter.
  *
@@ -159,6 +164,17 @@ node('JenkinsMarathonCI-Debian8-1-2017-02-23') { try {
         }
         throw err
     } finally {
+        if( env.BRANCH_NAME.startsWith("releases/") || env.BRANCH_NAME == "master" ) {
+            // Last build failed but this succeeded.
+            if( previousBuildFailed() && currentBuild.result == 'SUCCESS') {
+              slackSend(
+                message: "╭( ･ㅂ･)و ̑̑ @marathon-oncall branch `${env.BRANCH_NAME}` is green again. (<${env.BUILD_URL}|Open>)",
+                color: "good",
+                channel: "#marathon-dev",
+                tokenCredentialId: "f430eaac-958a-44cb-802a-6a943323a6a8")
+            }
+        }
+
         step([ $class: 'GitHubCommitStatusSetter'
              , errorHandlers: [[$class: 'ShallowAnyErrorHandler']]
              , contextSource: [$class: 'ManuallyEnteredCommitContextSource', context: "Velocity All"]
