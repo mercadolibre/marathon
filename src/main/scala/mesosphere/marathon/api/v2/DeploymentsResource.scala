@@ -1,4 +1,5 @@
-package mesosphere.marathon.api.v2
+package mesosphere.marathon
+package api.v2
 
 import javax.inject.Inject
 import javax.servlet.http.HttpServletRequest
@@ -10,6 +11,7 @@ import mesosphere.marathon.api.v2.json.Formats._
 import mesosphere.marathon.api.{ AuthResource, MarathonMediaType }
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.plugin.auth._
+import mesosphere.marathon.state.PathId
 import mesosphere.marathon.{ MarathonConf, MarathonSchedulerService }
 import mesosphere.util.Logging
 
@@ -50,6 +52,7 @@ class DeploymentsResource @Inject() (
       } else {
         // create a new deployment to return to the previous state
         deploymentResult(result(groupManager.updateRoot(
+          PathId.empty,
           deployment.revert,
           force = true
         )))

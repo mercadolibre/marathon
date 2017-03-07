@@ -92,7 +92,13 @@ def query_open_reviews():
 
 
 def query_closed_reviews():
-    params = {'status':'status-closed', 'api.token':os.getenv('CONDUIT_TOKEN')}
+    conduit_token = os.getenv('CONDUIT_TOKEN')
+
+    if not  conduit_token:
+        print("Please define a token with: CONDUIT_TOKEN=1234 ./review.py")
+        exit(1)
+
+    params = {'status':'status-closed', 'api.token':conduit_token}
     result = requests.get("{}/differential.query".format(ENDPOINT), params).json()
 
     data_frame = pandas.io.json.json_normalize(result, 'result')

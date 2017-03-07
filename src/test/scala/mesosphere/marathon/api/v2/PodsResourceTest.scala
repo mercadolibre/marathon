@@ -6,7 +6,6 @@ import javax.servlet.http.HttpServletResponse
 import akka.event.EventStream
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
-import com.codahale.metrics.MetricRegistry
 import mesosphere.AkkaUnitTest
 import mesosphere.marathon.api.v2.json.Formats.TimestampFormat
 import mesosphere.marathon.api.{ RestResource, TaskKiller, TestAuthFixture }
@@ -18,11 +17,10 @@ import mesosphere.marathon.core.instance.Instance
 import mesosphere.marathon.core.instance.Instance.InstanceState
 import mesosphere.marathon.core.pod.impl.PodManagerImpl
 import mesosphere.marathon.core.pod.{ MesosContainer, PodDefinition, PodManager }
-import mesosphere.marathon.metrics.Metrics
 import mesosphere.marathon.plugin.auth.{ Authenticator, Authorizer }
 import mesosphere.marathon.raml.{ ExecutorResources, FixedPodScalingPolicy, NetworkMode, Pod, Raml, Resources }
 import mesosphere.marathon.state.PathId._
-import mesosphere.marathon.state.Timestamp
+import mesosphere.marathon.state.{ Timestamp, UnreachableStrategy }
 import mesosphere.marathon.test.Mockito
 import mesosphere.marathon.core.deployment.DeploymentPlan
 import mesosphere.marathon.util.SemanticVersion
@@ -209,7 +207,7 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
       implicit val podSystem = mock[PodManager]
       val f = Fixture()
 
-      podSystem.find(any).returns(Future.successful(Some(PodDefinition())))
+      podSystem.find(any).returns(Some(PodDefinition()))
       podSystem.delete(any, eq(false)).returns(Future.successful(DeploymentPlan.empty))
       val response = f.podsResource.remove("/mypod", force = false, f.auth.request)
 
@@ -227,7 +225,7 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
       implicit val podSystem = mock[PodManager]
       val f = Fixture()
 
-      podSystem.find(any).returns(Future.successful(Option.empty[PodDefinition]))
+      podSystem.find(any).returns(Option.empty[PodDefinition])
       val response = f.podsResource.find("/mypod", f.auth.request)
 
       withClue(s"response body: ${response.getEntity}") {
@@ -239,13 +237,12 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
     }
 
     "support versions" when {
-      implicit val metrics = new Metrics(new MetricRegistry)
       implicit val ctx = ExecutionContext.global
 
       "there are no versions" when {
         "list no versions" in {
           val groupManager = mock[GroupManager]
-          groupManager.pod(any).returns(Future.successful(None))
+          groupManager.pod(any).returns(None)
           implicit val podManager = PodManagerImpl(groupManager)
           val f = Fixture()
 
@@ -256,7 +253,7 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
         }
         "return 404 when asking for a version" in {
           val groupManager = mock[GroupManager]
-          groupManager.pod(any).returns(Future.successful(None))
+          groupManager.pod(any).returns(None)
           groupManager.podVersions(any).returns(Source.empty)
           groupManager.podVersion(any, any).returns(Future.successful(None))
           implicit val podManager = PodManagerImpl(groupManager)
@@ -275,7 +272,7 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
         val pod2 = pod1.copy(version = pod1.version + 1.minute)
         "list the available versions" in {
           val groupManager = mock[GroupManager]
-          groupManager.pod(any).returns(Future.successful(Some(pod2)))
+          groupManager.pod(any).returns(Some(pod2))
           groupManager.podVersions(pod1.id).returns(Source(Seq(pod1.version.toOffsetDateTime, pod2.version.toOffsetDateTime)))
 
           implicit val podManager = PodManagerImpl(groupManager)
@@ -290,7 +287,7 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
         }
         "get a specific version" in {
           val groupManager = mock[GroupManager]
-          groupManager.pod(any).returns(Future.successful(Some(pod2)))
+          groupManager.pod(any).returns(Some(pod2))
           groupManager.podVersions(pod1.id).returns(Source(Seq(pod1.version.toOffsetDateTime, pod2.version.toOffsetDateTime)))
           groupManager.podVersion(pod1.id, pod1.version.toOffsetDateTime).returns(Future.successful(Some(pod1)))
           groupManager.podVersion(pod1.id, pod2.version.toOffsetDateTime).returns(Future.successful(Some(pod2)))
@@ -309,8 +306,13 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
         "attempting to kill a single instance" in {
           implicit val killer = mock[TaskKiller]
           val f = Fixture()
-          val instance = Instance(Instance.Id.forRunSpec("/id1".toRootPath), Instance.AgentInfo("", None, Nil),
-            InstanceState(Condition.Running, Timestamp.now(), Some(Timestamp.now()), None), Map.empty, runSpecVersion = Timestamp.now())
+          val instance = Instance(
+            Instance.Id.forRunSpec("/id1".toRootPath), Instance.AgentInfo("", None, Nil),
+            InstanceState(Condition.Running, Timestamp.now(), Some(Timestamp.now()), None),
+            Map.empty,
+            runSpecVersion = Timestamp.now(),
+            unreachableStrategy = UnreachableStrategy.default()
+          )
           killer.kill(any, any, any)(any) returns Future.successful(Seq(instance))
           val response = f.podsResource.killInstance("/id", instance.instanceId.toString, f.auth.request)
           withClue(s"response body: ${response.getEntity}") {
@@ -323,9 +325,14 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
           implicit val killer = mock[TaskKiller]
           val instances = Seq(
             Instance(Instance.Id.forRunSpec("/id1".toRootPath), Instance.AgentInfo("", None, Nil),
-              InstanceState(Condition.Running, Timestamp.now(), Some(Timestamp.now()), None), Map.empty, runSpecVersion = Timestamp.now()),
+              InstanceState(Condition.Running, Timestamp.now(), Some(Timestamp.now()), None), Map.empty,
+              runSpecVersion = Timestamp.now(),
+              unreachableStrategy = UnreachableStrategy.default()
+            ),
             Instance(Instance.Id.forRunSpec("/id1".toRootPath), Instance.AgentInfo("", None, Nil),
-              InstanceState(Condition.Running, Timestamp.now(), Some(Timestamp.now()), None), Map.empty, runSpecVersion = Timestamp.now()))
+              InstanceState(Condition.Running, Timestamp.now(), Some(Timestamp.now()), None), Map.empty,
+              runSpecVersion = Timestamp.now(),
+              unreachableStrategy = UnreachableStrategy.default()))
 
           val f = Fixture()
 
@@ -347,7 +354,7 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
         "delete a pod without auth access" in {
           implicit val podSystem = mock[PodManager]
           val f = Fixture()
-          podSystem.find(any).returns(Future.successful(Some(PodDefinition())))
+          podSystem.find(any).returns(Some(PodDefinition()))
           podSystem.delete(any, eq(false)).returns(Future.successful(DeploymentPlan.empty))
           f.auth.authorized = false
           val response = f.podsResource.remove("/mypod", force = false, f.auth.request)
@@ -362,10 +369,10 @@ class PodsResourceTest extends AkkaUnitTest with Mockito {
       class UnAuthorizedFixture(authorized: Boolean, authenticated: Boolean) {
         implicit val podSystem = mock[PodManager]
         val fixture = Fixture()
-        podSystem.findAll(any).returns(Source.empty)
-        podSystem.find(any).returns(Future.successful(Some(PodDefinition())))
+        podSystem.findAll(any).returns(Seq.empty)
+        podSystem.find(any).returns(Some(PodDefinition()))
         podSystem.delete(any, any).returns(Future.successful(DeploymentPlan.empty))
-        podSystem.ids().returns(Source.empty)
+        podSystem.ids().returns(Set.empty)
         podSystem.version(any, any).returns(Future.successful(Some(PodDefinition())))
         fixture.auth.authorized = authorized
         fixture.auth.authenticated = authenticated

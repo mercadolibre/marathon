@@ -2,9 +2,16 @@
 from shakedown import *
 from utils import *
 from dcos.errors import DCOSException
+from distutils.version import LooseVersion
+
 import uuid
 import random
 import pytest
+
+
+marathon_1_3 = pytest.mark.skipif('marthon_version_less_than("1.3")')
+marathon_1_4 = pytest.mark.skipif('marthon_version_less_than("1.4")')
+marathon_1_5 = pytest.mark.skipif('marthon_version_less_than("1.5")')
 
 
 def app(id=1, instances=1):
@@ -50,7 +57,7 @@ def pod_constraints(name, operator, value=None):
     constraints = {
         'fieldName': name,
         'operator': operator,
-        'value' : value
+        'value': value
     }
 
     return constraints
@@ -70,21 +77,21 @@ def group():
                 "apps": [
                     {
                         "cmd": "sleep 1000",
-                        "cpus": 1.0,
+                        "cpus": 0.01,
                         "dependencies": [],
                         "disk": 0.0,
                         "id": "/test-group/sleep/goodnight",
                         "instances": 1,
-                        "mem": 128.0
+                        "mem": 32.0
                     },
                     {
                         "cmd": "sleep 1000",
-                        "cpus": 1.0,
+                        "cpus": 0.01,
                         "dependencies": [],
                         "disk": 0.0,
                         "id": "/test-group/sleep/goodnight2",
                         "instances": 1,
-                        "mem": 128.0
+                        "mem": 32.0
                     }
                 ],
                 "dependencies": [],
@@ -100,7 +107,7 @@ def python_http_app():
     return {
         'id': 'python-http',
         'cmd': '/opt/mesosphere/bin/python -m http.server $PORT0',
-        'cpus': 1,
+        'cpus': 0.5,
         'mem': 128,
         'disk': 0,
         'instances': 1
@@ -111,7 +118,7 @@ def fake_framework_app():
     return {
         "id": "/python-http",
         "cmd": "/opt/mesosphere/bin/python -m http.server $PORT0",
-        "cpus": 1,
+        "cpus": 0.5,
         "mem": 128,
         "disk": 0,
         "instances": 1,
@@ -152,7 +159,7 @@ def fake_framework_app():
         {
             "protocol": "tcp",
             "port": 0,
-	        "name": "api"
+            "name": "api"
         }]
     }
 
@@ -201,7 +208,7 @@ def readiness_and_health_app():
     return {
         "id": "/python-http",
         "cmd": "/opt/mesosphere/bin/python -m http.server $PORT0",
-        "cpus": 1,
+        "cpus": 0.5,
         "mem": 128,
         "disk": 0,
         "instances": 1,
@@ -210,7 +217,7 @@ def readiness_and_health_app():
             "name": "readiness",
             "protocol": "HTTP",
             "path": "/",
- 		    "portName": "api",
+            "portName": "api",
             "intervalSeconds": 2,
             "timeoutSeconds": 1,
             "httpStatusCodesForReady": [200]
@@ -233,7 +240,7 @@ def readiness_and_health_app():
         {
             "protocol": "tcp",
             "port": 0,
-	        "name": "api"
+            "name": "api"
         }]
     }
 
@@ -283,7 +290,7 @@ def pending_deployment_due_to_resource_roles(app_id):
 
     return {
       "id": app_id,
-      "cpus": 0.001,
+      "cpus": 0.01,
       "instances": 1,
       "mem": 32,
       "cmd": "sleep 12345",
@@ -356,11 +363,15 @@ def remove_undeployed():
     stop_all_deployments()
 
 
-def stop_all_deployments():
+def stop_all_deployments(noisy=False):
     client = marathon.create_client()
     deployments = client.get_deployments()
     for deployment in deployments:
-        client.stop_deployment(deployment['id'])
+        try:
+            client.stop_deployment(deployment['id'])
+        except Exception as e:
+            if noisy:
+                print(e)
 
 
 def delete_all_apps_wait():
@@ -465,10 +476,37 @@ def wait_for_task(service, task, timeout_sec=120):
 
 
 def get_pod_tasks(pod_id):
+    pod_id = pod_id.lstrip('/')
     pod_tasks = []
     tasks = get_marathon_tasks()
     for task in tasks:
-        if task['labels'][0]['value'] == pod_id:
+        if task['discovery']['name'] == pod_id:
             pod_tasks.append(task)
 
     return pod_tasks
+
+
+def marathon_version():
+    client = marathon.create_client()
+    about = client.get_about()
+    # 1.3.9 or 1.4.0-RC8
+    return LooseVersion(about.get("version"))
+
+
+def marthon_version_less_than(version):
+    return marathon_version() < LooseVersion(version)
+
+
+dcos_1_10 = pytest.mark.skipif('dcos_version_less_than("1.10")')
+dcos_1_9 = pytest.mark.skipif('dcos_version_less_than("1.9")')
+dcos_1_8 = pytest.mark.skipif('dcos_version_less_than("1.8")')
+dcos_1_7 = pytest.mark.skipif('dcos_version_less_than("1.7")')
+
+
+def dcos_canonical_version():
+    version = dcos_version().replace('-dev', '')
+    return LooseVersion(version)
+
+
+def dcos_version_less_than(version):
+    return dcos_canonical_version() < LooseVersion(version)

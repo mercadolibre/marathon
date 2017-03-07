@@ -19,11 +19,6 @@ TOKEN = dcos_acs_token()
 
 def setup_module(module):
     # verify test system requirements are met (number of nodes needed)
-    agents = get_private_agents()
-    print(agents)
-    if len(agents) < 2:
-        assert False, "Network tests require at least 2 private agents"
-
     ensure_mom()
     wait_for_service_endpoint(PACKAGE_APP_ID)
     cluster_info()
@@ -35,7 +30,12 @@ def setup_function(function):
         delete_all_apps_wait()
 
 
+@private_agent_2
 def test_mom_with_master_process_failure():
+    """ Launches a MoM, launches an app from MoM and restarts the master.
+        It is expected that the service endpoint will come back and that the
+        task_id is the original task_id
+    """
     app_def = app('master-failure')
     host = ip_other_than_mom()
     pin_to_host(app_def, host)
@@ -54,7 +54,11 @@ def test_mom_with_master_process_failure():
             tasks[0]['id'] == original_task_id
 
 
+@private_agent_2
 def test_mom_when_disconnected_from_zk():
+    """ Launch an app from MoM.  Then knock out access to zk from the MoM.
+        Verify the task is still good.
+    """
     app_def = app('zk-failure')
     host = ip_other_than_mom()
     pin_to_host(app_def, host)
@@ -67,13 +71,20 @@ def test_mom_when_disconnected_from_zk():
 
         with iptable_rules(host):
             block_port(host, 2181)
+            #  time of the zk block
             time.sleep(10)
-        time.sleep(5)
-        tasks = client.get_tasks('/zk-failure')
-        tasks[0]['id'] == original_task_id
+
+        # after access to zk is restored.
+        @retrying.retry(wait_fixed=1000, stop_max_delay=3000)
+        def check_task_is_back():
+            tasks = client.get_tasks('/zk-failure')
+            tasks[0]['id'] == original_task_id
 
 
+@private_agent_2
 def test_mom_when_task_agent_bounced():
+    """ Launch an app from MoM and restart the node the task is on.
+    """
     app_def = app('agent-failure')
     host = ip_other_than_mom()
     pin_to_host(app_def, host)
@@ -83,17 +94,20 @@ def test_mom_when_task_agent_bounced():
         deployment_wait()
         tasks = client.get_tasks('/agent-failure')
         original_task_id = tasks[0]['id']
-
         restart_agent(host)
-        time.sleep(5)
-        tasks = client.get_tasks('/agent-failure')
-        tasks[0]['id'] == original_task_id
+
+        @retrying.retry(wait_fixed=1000, stop_max_delay=3000)
+        def check_task_is_back():
+            tasks = client.get_tasks('/agent-failure')
+            tasks[0]['id'] == original_task_id
 
 
+@private_agent_2
 def test_mom_when_mom_agent_bounced():
+    """ Launch an app from MoM and restart the node MoM is on.
+    """
     app_def = app('agent-failure')
     mom_ip = ip_of_mom()
-    print(mom_ip)
     host = ip_other_than_mom()
     pin_to_host(app_def, host)
     with marathon_on_marathon():
@@ -104,12 +118,17 @@ def test_mom_when_mom_agent_bounced():
         original_task_id = tasks[0]['id']
 
         restart_agent(mom_ip)
-        time.sleep(5)
-        tasks = client.get_tasks('/agent-failure')
-        tasks[0]['id'] == original_task_id
+
+        @retrying.retry(wait_fixed=1000, stop_max_delay=3000)
+        def check_task_is_back():
+            tasks = client.get_tasks('/agent-failure')
+            tasks[0]['id'] == original_task_id
 
 
+@private_agent_2
 def test_mom_when_mom_process_killed():
+    """ Launched a task from MoM then killed MoM.
+    """
     app_def = app('agent-failure')
     host = ip_other_than_mom()
     pin_to_host(app_def, host)
@@ -121,14 +140,14 @@ def test_mom_when_mom_process_killed():
         original_task_id = tasks[0]['id']
 
         kill_process_on_host(ip_of_mom(), 'marathon-assembly')
-        time.sleep(5)
         wait_for_task('marathon', 'marathon-user', 300)
-    # print(wait_for_task('marathon', 'marathon-user')['state'] == 'TASK_RUNNING')
         wait_for_service_endpoint('marathon-user')
+
         tasks = client.get_tasks('/agent-failure')
         tasks[0]['id'] == original_task_id
 
 
+@private_agent_2
 def test_mom_with_network_failure():
     """Marathon on Marathon (MoM) tests for DC/OS with network failures
     simulated by knocking out ports
@@ -147,7 +166,6 @@ def test_mom_with_network_failure():
         tasks = client.get_tasks('sleep')
         original_sleep_task_id = tasks[0]["id"]
         task_ip = tasks[0]['host']
-        print("\nTask IP: " + task_ip)
 
     # PR for network partitioning in shakedown makes this better
     # take out the net
@@ -174,6 +192,7 @@ def test_mom_with_network_failure():
     assert current_sleep_task_id == original_sleep_task_id, "Task ID shouldn't change"
 
 
+@private_agent_2
 def test_mom_with_network_failure_bounce_master():
     """Marathon on Marathon (MoM) tests for DC/OS with network failures simulated by
     knocking out ports
@@ -229,14 +248,6 @@ def teardown_module(module):
 
 def service_delay(delay=120):
     time.sleep(delay)
-
-
-def print_json(response, print_response=True):
-    response_json = response.json()
-    if print_response:
-        print("Got response for %s %s:\n%s" % (
-            response.request.method, response.request.url, response_json))
-    return response_json
 
 
 def partition_agent(hostname):

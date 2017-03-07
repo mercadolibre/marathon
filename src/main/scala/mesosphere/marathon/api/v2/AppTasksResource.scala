@@ -6,7 +6,6 @@ import javax.servlet.http.HttpServletRequest
 import javax.ws.rs._
 import javax.ws.rs.core.{ Context, MediaType, Response }
 
-import com.codahale.metrics.annotation.Timed
 import mesosphere.marathon.api._
 import mesosphere.marathon.api.v2.json.Formats._
 import mesosphere.marathon.core.appinfo.EnrichedTask
@@ -40,7 +39,6 @@ class AppTasksResource @Inject() (
   val GroupTasks = """^((?:.+/)|)\*$""".r
 
   @GET
-  @Timed
   @SuppressWarnings(Array("all")) /* async/await */
   def indexJson(
     @PathParam("appId") id: String,
@@ -50,13 +48,13 @@ class AppTasksResource @Inject() (
       id match {
         case GroupTasks(gid) =>
           val groupPath = gid.toRootPath
-          val maybeGroup = await(groupManager.group(groupPath))
+          val maybeGroup = groupManager.group(groupPath)
           withAuthorization(ViewGroup, maybeGroup, unknownGroup(groupPath)) { group =>
             ok(jsonObjString("tasks" -> runningTasks(group.transitiveAppIds, instancesBySpec)))
           }
         case _ =>
           val appId = id.toRootPath
-          val maybeApp = await(groupManager.app(appId))
+          val maybeApp = groupManager.app(appId)
           withAuthorization(ViewRunSpec, maybeApp, unknownApp(appId)) { _ =>
             ok(jsonObjString("tasks" -> runningTasks(Set(appId), instancesBySpec)))
           }
@@ -78,7 +76,6 @@ class AppTasksResource @Inject() (
 
   @GET
   @Produces(Array(MediaType.TEXT_PLAIN))
-  @Timed
   @SuppressWarnings(Array("all")) /* async/await */
   def indexTxt(
     @PathParam("appId") appId: String,
@@ -86,14 +83,13 @@ class AppTasksResource @Inject() (
     val id = appId.toRootPath
     result(async {
       val instancesBySpec = await(instanceTracker.instancesBySpec)
-      withAuthorization(ViewRunSpec, await(groupManager.app(id)), unknownApp(id)) { app =>
+      withAuthorization(ViewRunSpec, groupManager.app(id), unknownApp(id)) { app =>
         ok(EndpointsHelper.appsToEndpointString(instancesBySpec, Seq(app), "\t"))
       }
     })
   }
 
   @DELETE
-  @Timed
   def deleteMany(
     @PathParam("appId") appId: String,
     @QueryParam("host") host: String,
@@ -123,7 +119,6 @@ class AppTasksResource @Inject() (
 
   @DELETE
   @Path("{taskId}")
-  @Timed
   def deleteOne(
     @PathParam("appId") appId: String,
     @PathParam("taskId") id: String,

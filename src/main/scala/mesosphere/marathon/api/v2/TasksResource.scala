@@ -7,7 +7,6 @@ import javax.servlet.http.HttpServletRequest
 import javax.ws.rs._
 import javax.ws.rs.core.{ Context, MediaType, Response }
 
-import com.codahale.metrics.annotation.Timed
 import mesosphere.marathon.api.v2.json.Formats._
 import mesosphere.marathon.api.{ EndpointsHelper, MarathonMediaType, TaskKiller, _ }
 import mesosphere.marathon.core.appinfo.EnrichedTask
@@ -42,7 +41,6 @@ class TasksResource @Inject() (
 
   @GET
   @Produces(Array(MarathonMediaType.PREFERRED_APPLICATION_JSON))
-  @Timed
   @SuppressWarnings(Array("all")) /* async/await */
   def indexJson(
     @QueryParam("status") status: String,
@@ -60,10 +58,8 @@ class TasksResource @Inject() (
       val appIds = instancesBySpec.allSpecIdsWithInstances
 
       //TODO: Move to GroupManager.
-      val appIdsToApps: Map[PathId, Option[AppDefinition]] = await(
-        Future.sequence(
-          appIds.map(appId => groupManager.app(appId).map(appId -> _))
-        )).toMap
+      val appIdsToApps: Map[PathId, Option[AppDefinition]] =
+        appIds.map(appId => appId -> groupManager.app(appId))(collection.breakOut)
 
       val appToPorts = appIdsToApps.map {
         case (appId, app) => appId -> app.map(_.servicePorts).getOrElse(Nil)
@@ -101,12 +97,11 @@ class TasksResource @Inject() (
 
   @GET
   @Produces(Array(MediaType.TEXT_PLAIN))
-  @Timed
   @SuppressWarnings(Array("all")) /* async/await */
   def indexTxt(@Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
     result(async {
       val instancesBySpec = await(instanceTracker.instancesBySpec)
-      val rootGroup = await(groupManager.rootGroup())
+      val rootGroup = groupManager.rootGroup()
       val appsToEndpointString = EndpointsHelper.appsToEndpointString(
         instancesBySpec,
         rootGroup.transitiveApps.filterAs(app => isAuthorized(ViewRunSpec, app))(collection.breakOut),
@@ -119,7 +114,6 @@ class TasksResource @Inject() (
   @POST
   @Produces(Array(MarathonMediaType.PREFERRED_APPLICATION_JSON))
   @Consumes(Array(MediaType.APPLICATION_JSON))
-  @Timed
   @Path("delete")
   @SuppressWarnings(Array("all")) /* async/await */
   def killTasks(
@@ -143,8 +137,7 @@ class TasksResource @Inject() (
     }
 
     def doKillTasks(toKill: Map[PathId, Seq[Instance]]): Future[Response] = async {
-      val appDefinitions = tasksIdToAppId.values.map(appId => groupManager.app(appId))(collection.breakOut)
-      val affectedApps = await(Future.sequence(appDefinitions)).flatten
+      val affectedApps = tasksIdToAppId.values.flatMap(appId => groupManager.app(appId))(collection.breakOut)
       // FIXME (gkleiman): taskKiller.kill a few lines below also checks authorization, but we need to check ALL before
       // starting to kill tasks
       affectedApps.foreach(checkAuthorization(UpdateRunSpec, _))
