@@ -5,7 +5,8 @@ import pandas
 from datetime import datetime
 from tabulate import tabulate
 
-ENDPOINT="https://phabricator.mesosphere.com/api"
+ENDPOINT = "https://phabricator.mesosphere.com/api"
+
 
 def pandas_frame_from(result):
     d = pandas.io.json.json_normalize(result, [['result', 'data']])
@@ -25,7 +26,7 @@ def life_time(data_frame):
     :return Life time series
     """
     return data_frame.assign(
-            lifeTime = lambda x: x.dateModified - x.dateCreated)['lifeTime']
+            lifeTime=lambda x: x.dateModified - x.dateCreated)['lifeTime']
 
 
 def stats(series, name, percentiles=[.25, .5, .75, .9]):
@@ -38,11 +39,13 @@ def stats(series, name, percentiles=[.25, .5, .75, .9]):
     """
     return series.describe(percentiles=percentiles).rename(name)
 
+
 def beginning_of_this_month():
     """
     :return Date for first day of this month.
     """
     return datetime.now().replace(day=1, hour=0, minute=0, second=0)
+
 
 def beginning_of_last_month():
     """
@@ -66,13 +69,14 @@ def data_between(data_frame, start, end=datetime.now()):
     :return Sub series
     """
     return data_frame.loc[(data_frame['dateCreated'] >= start) &
-        (data_frame['dateCreated'] < end)]
+                          (data_frame['dateCreated'] < end)]
 
 
 def query_open_reviews():
-    params = {'queryKey':'active', 'order':'newest',
-        'api.token':os.getenv('CONDUIT_TOKEN')}
-    result = requests.get("{}/differential.revision.search".format(ENDPOINT), params).json()
+    params = {'queryKey': 'active', 'order': 'newest',
+              'api.token': os.getenv('CONDUIT_TOKEN')}
+    result = requests.get(
+            "{}/differential.revision.search".format(ENDPOINT), params).json()
 
     data_frame = pandas_frame_from(result)
     data_frame.pop('attachments')
@@ -81,11 +85,10 @@ def query_open_reviews():
     data_frame.pop('jira.issues')
 
     # Convert dates and calculate age
-    dates = data_frame[['dateCreated', 'dateModified']].applymap(lambda d:
-        datetime.fromtimestamp(d))
+    dates = data_frame[['dateCreated', 'dateModified']].applymap(
+            lambda d: datetime.fromtimestamp(d))
     data_frame = data_frame.join(dates, rsuffix='.converted').assign(
-        age = lambda x: datetime.now() - x['dateCreated.converted'])
-
+            age=lambda x: datetime.now() - x['dateCreated.converted'])
 
     age_stats = data_frame[['age']].describe(percentiles=[.25, .5, .75, .9])
     print(age_stats)
@@ -94,12 +97,13 @@ def query_open_reviews():
 def query_closed_reviews():
     conduit_token = os.getenv('CONDUIT_TOKEN')
 
-    if not  conduit_token:
+    if not conduit_token:
         print("Please define a token with: CONDUIT_TOKEN=1234 ./review.py")
         exit(1)
 
-    params = {'status':'status-closed', 'api.token':conduit_token}
-    result = requests.get("{}/differential.query".format(ENDPOINT), params).json()
+    params = {'status': 'status-closed', 'api.token': conduit_token}
+    result = requests.get(
+            "{}/differential.query".format(ENDPOINT), params).json()
 
     data_frame = pandas.io.json.json_normalize(result, 'result')
     dates = data_frame[['dateCreated', 'dateModified']].apply(
@@ -121,7 +125,7 @@ def query_closed_reviews():
         life_time_this_month, this_month.strftime("This Month (%b)"))
 
     all_stats = pandas.concat(
-        [total_life_time_stats, last_month_stats, this_month_stats],axis=1)
+        [total_life_time_stats, last_month_stats, this_month_stats], axis=1)
 
     print(all_stats)
 
