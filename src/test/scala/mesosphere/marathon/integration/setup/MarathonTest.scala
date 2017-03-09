@@ -601,7 +601,7 @@ trait MarathonSuite extends Suite with StrictLogging with ScalaFutures with Befo
 trait LocalMarathonTest extends ExitDisabledTest with MarathonTest with ScalaFutures
     with AkkaUnitTestLike with MesosTest with ZookeeperServerTest {
 
-  val marathonArgs = Map.empty[String, String]
+  def marathonArgs: Map[String, String] = Map.empty
 
   lazy val marathonServer = LocalMarathon(autoStart = false, suiteName = suiteName, masterUrl = mesosMasterUrl,
     zkUrl = s"zk://${zkServer.connectUri}/marathon",
@@ -628,7 +628,11 @@ trait LocalMarathonTest extends ExitDisabledTest with MarathonTest with ScalaFut
 /**
   * trait that has marathon, zk, and a mesos ready to go
   */
-trait EmbeddedMarathonTest extends Suite with StrictLogging with ZookeeperServerTest with MesosClusterTest with LocalMarathonTest
+trait EmbeddedMarathonTest extends Suite with StrictLogging with ZookeeperServerTest with MesosClusterTest with LocalMarathonTest {
+  // disable failover timeout to assist with cleanup ops; terminated marathons are immediately removed from mesos's
+  // list of frameworks
+  override def marathonArgs: Map[String, String] = Map("failover_timeout" -> "0")
+}
 
 /**
   * Trait that has a Marathon cluster, zk, and Mesos via mesos-local ready to go.
