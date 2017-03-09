@@ -138,9 +138,7 @@ case class MesosLocal(
 
   def clean(): Unit = {
     val client = new MesosFacade(masterUrl)
-    while (client.state.value.agents.exists(agent => !agent.usedResources.isEmpty || agent.reservedResourcesByRole.nonEmpty)) {
-      client.frameworkIds().value.foreach(client.terminate)
-    }
+    MesosTest.clean(client)
   }
 
   override def close(): Unit = {
@@ -309,9 +307,7 @@ case class MesosCluster(
 
   def clean(): Unit = {
     val client = new MesosFacade(Await.result(waitForLeader(), waitForLeaderTimeout))
-    while (client.state.value.agents.exists(agent => !agent.usedResources.isEmpty || agent.reservedResourcesByRole.nonEmpty)) {
-      client.frameworkIds().value.foreach(client.terminate)
-    }
+    MesosTest.clean(client)
   }
 
   override def close(): Unit = {
@@ -319,12 +315,22 @@ case class MesosCluster(
     agents.foreach(_.close())
     masters.foreach(_.close())
   }
+
 }
 
 trait MesosTest {
   def mesos: MesosFacade
   val mesosMasterUrl: String
   def cleanMesos(): Unit
+}
+
+object MesosTest {
+  def clean(client: MesosFacade): Unit = {
+    while (client.state.value.agents.exists(agent => !agent.usedResources.isEmpty || agent.reservedResourcesByRole.nonEmpty)) {
+      client.frameworkIds().value.foreach(client.teardown)
+      Thread.sleep(2000L)
+    }
+  }
 }
 
 trait SimulatedMesosTest extends MesosTest {
